@@ -122,18 +122,30 @@ void mic3_task(void *pvParameter)
 
         // Process received data
         int mic_value = (data[0] << 8) | data[1];
-        
+
+        // Ensure mic_value is within the expected range
+        if (mic_value < 0) {
+            mic_value = 0;
+        } else if (mic_value > ADC_MAX_VALUE) {
+            mic_value = ADC_MAX_VALUE;
+        }
+
         // Convert the digital value to voltage
         float voltage = (mic_value * REF_VOLTAGE) / ADC_MAX_VALUE;
 
-        // Convert the voltage to decibels (assuming a reference voltage of 1V for 0 dB)
-        float decibels = 20 * log10(voltage / 3.3);
+        // Ensure voltage is positive and greater than zero
+        if (voltage <= 0) {
+            voltage = 0.0001; // Small positive value to avoid log(0)
+        }
+
+        // Convert the voltage to decibels (assuming a reference voltage of 0.775V for 0 dB)
+        float decibels = 20 * log10(voltage / 0.775);
 
         // Print the value in decibels
         printf("MIC3 value: %d | Voltage: %.2f V | Decibels: %.2f dB\n", mic_value, voltage, decibels);
 
-        // Esperar un segundo
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        // Esperar 3 ms
+        vTaskDelay(pdMS_TO_TICKS(300));
     }
 }
 
