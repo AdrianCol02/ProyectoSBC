@@ -1,7 +1,7 @@
 {
     "version":            "1.1",
     "project_name":       "EstacionSonidoLuminosidad",
-    "project_version":    "2dc98c9-dirty",
+    "project_version":    "526b005-dirty",
     "project_path":       "D:/Universidad/Uni/Cuarto/SBC/ProyectoFinalAsignatura/EstacionSonidoLuminosidad",
     "idf_path":           "C:/Users/adria/esp/v5.3.1/esp-idf",
     "build_dir":          "D:/Universidad/Uni/Cuarto/SBC/ProyectoFinalAsignatura/EstacionSonidoLuminosidad/build",
