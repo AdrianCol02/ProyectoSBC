@@ -355,6 +355,9 @@ Mbed TLS_SOURCE_DIR:STATIC=C:/Users/adria/esp/v5.3.1/esp-idf/components/mbedtls/
 //No help, variable specified on the command line.
 PYTHON_DEPS_CHECKED:UNINITIALIZED=1
 
+//No help, variable specified on the command line.
+SDKCONFIG:UNINITIALIZED=d:\Universidad\Uni\Cuarto\SBC\ProyectoFinalAsignatura\EstacionSonidoLuminosidad\sdkconfig
+
 //Allow unsafe builds. These builds ARE NOT SECURE.
 UNSAFE_BUILD:BOOL=OFF
 
