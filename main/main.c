@@ -1,3 +1,4 @@
+//Librerias necesarias para el funcionamiento del programa
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -16,6 +17,7 @@
 #include "driver/gpio.h"
 #include <inttypes.h>
 
+// Sección de constantes
 // Pines de conexión del sensor de luz
 #define LIGHT_SENSOR_PIN ADC_CHANNEL_3 
                
@@ -59,6 +61,7 @@ static float global_decibels = 0;
 
 /* En las funciones de los sensores se encuentran comentadas las trazas de monitoreo*/
 
+// Manejador de eventos del WiFi
 void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         if (s_retry_num < MAX_RETRY) {
@@ -104,6 +107,7 @@ void wifi_init_sta(void) {
     esp_wifi_connect();
 }
 
+// Funciones de envio de datos a ThingsBoard
 void send_voltage_to_thingsboard(float voltage) {
     char post_data[50];
     snprintf(post_data, sizeof(post_data), "{\"voltage\": %.2f}", voltage);
@@ -178,6 +182,7 @@ void send_location_data(void) {
     esp_http_client_cleanup(client);
 }
 
+// Funciones de los sensores
 void light_sensor_task(void *pvParameter) {
     adc_oneshot_unit_handle_t adc1_handle;
     adc_oneshot_unit_init_cfg_t init_config = {
@@ -256,6 +261,7 @@ void mic3_task(void *pvParameter) {
     }
 }
 
+//Función para el manejo de los LEDs del semáforo
 void led_task(void *pvParameter) {
     gpio_reset_pin(LED_RED_PIN);
     gpio_reset_pin(LED_YELLOW_PIN);
@@ -289,6 +295,7 @@ void led_task(void *pvParameter) {
     }
 }
 
+// Función principal
 void app_main(void) {
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
