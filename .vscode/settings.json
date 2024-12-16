@@ -14,5 +14,6 @@
     "idf.portWin": "COM3",
     "idf.pythonBinPathWin": "C:\\Users\\adria\\.espressif\\python_env\\idf5.3_py3.11_env\\Scripts\\python.exe",
     "idf.toolsPathWin": "C:\\Users\\adria\\.espressif",
-    "idf.flashType": "UART"
+    "idf.flashType": "UART",
+    "sarif-viewer.connectToGithubCodeScanning": "off"
 }

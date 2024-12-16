@@ -13,31 +13,51 @@
 #include "nvs_flash.h"
 #include "esp_netif.h"
 #include "driver/spi_master.h"
+#include "driver/gpio.h"
 #include <inttypes.h>
 
-#define LIGHT_SENSOR_PIN ADC_CHANNEL_3 // GPIO39
-#define ADC_MAX_VALUE 4095               // Valor máximo de un ADC de 12 bits
-#define REF_VOLTAGE 3.3                 // Voltaje de referencia de la ESP32
-
+// Pines de conexión del sensor de luz
+#define LIGHT_SENSOR_PIN ADC_CHANNEL_3 
+               
+// URL de la API de ThingsBoard para enviar los datos de los sensores
 #define FIRMWARE_URL "http://demo.thingsboard.io/api/v1/6OaUbcakpzr2PpJuKKWi/telemetry"
 #define TAG "PROYECTO"
 
-// Configuración de WiFi
+// Credenciales de la red WiFi
 #define WIFI_SSID "SBC"
 #define WIFI_PASS "SBCwifi$"
 
-#define MAX_RETRY 5
+// Constantes para el manejo de los sensores
+#define MAX_RETRY 5 // Número máximo de intentos de conexión al WiFi
+#define MAX_DECIBELS 120.0 // Valor máximo de decibeles
+#define ADC_MAX_VALUE 4095 // Valor máximo de la conversión analógica-digital
+#define REF_VOLTAGE 3.3  // Voltaje de referencia
 
+// Coordenadas del laboratorio
 #define LATITUDE 40.3897656
 #define LONGITUDE -3.6280461
 
+// Pines de conexión del micrófono
 #define PIN_NUM_MISO 19
 #define PIN_NUM_MOSI 23
 #define PIN_NUM_CLK  18
 #define PIN_NUM_CS   5
 
+// Pines de conexión de los LEDs
+#define LED_RED_PIN 25
+#define LED_YELLOW_PIN 26
+#define LED_GREEN_PIN 27
+
+// Variables para el manejo de la conexión al WiFi
 static int s_retry_num = 0;
 static SemaphoreHandle_t wifi_semaphore;
+
+// Variables globales para almacenar los valores de los sensores
+static float global_voltage = 0; 
+static float global_decibels = 0;
+
+
+/* En las funciones de los sensores se encuentran comentadas las trazas de monitoreo*/
 
 void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
@@ -47,14 +67,14 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
             ESP_LOGI(TAG, "Reintentando conexión al WiFi...");
         } else {
             ESP_LOGI(TAG, "No se pudo conectar al WiFi después de %d intentos", MAX_RETRY);
-            xSemaphoreGive(wifi_semaphore); // Liberar el semáforo después de los intentos
+            xSemaphoreGive(wifi_semaphore);
         }
         ESP_LOGI(TAG, "Conexión al WiFi fallida");
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Conectado al WiFi, dirección IP: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
-        xSemaphoreGive(wifi_semaphore); // Liberar el semáforo al obtener IP
+        xSemaphoreGive(wifi_semaphore);
     }
 }
 
@@ -130,7 +150,6 @@ void send_decibels_to_thingsboard(float decibels) {
     } else {
         ESP_LOGE(TAG, "HTTP POST request failed: %s", esp_err_to_name(err));
     }
-
     esp_http_client_cleanup(client);
 }
 
@@ -160,7 +179,6 @@ void send_location_data(void) {
 }
 
 void light_sensor_task(void *pvParameter) {
-    // Configuración del ADC para el sensor de luz
     adc_oneshot_unit_handle_t adc1_handle;
     adc_oneshot_unit_init_cfg_t init_config = {
         .unit_id = ADC_UNIT_1,
@@ -174,20 +192,13 @@ void light_sensor_task(void *pvParameter) {
     adc_oneshot_config_channel(adc1_handle, LIGHT_SENSOR_PIN, &config);
 
     while (1) {
-        // Leer el valor analógico entero del sensor
         int int_value;
         adc_oneshot_read(adc1_handle, LIGHT_SENSOR_PIN, &int_value);
 
-        // Convertir el valor a voltaje
         float voltage = (int_value * REF_VOLTAGE) / 4095.0;
-
-        // Mostrar resultados en el terminal
-        printf("Valor entero: %d | Voltaje: %.2f V\n", int_value, voltage);
-
-        // Enviar el valor de voltaje a ThingsBoard
+        global_voltage = voltage;
+        //printf("Valor entero: %d | Voltaje: %.2f V\n", int_value, voltage); // Trazas de depuración
         send_voltage_to_thingsboard(voltage);
-
-        // Esperar un segundo
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
@@ -203,17 +214,14 @@ void mic3_task(void *pvParameter) {
     };
 
     spi_device_interface_config_t devcfg = {
-        .clock_speed_hz = 1000000,           // Clock out at 1 MHz
-        .mode = 0,                           // SPI mode 0
-        .spics_io_num = PIN_NUM_CS,          // CS pin
-        .queue_size = 7,                     // We want to be able to queue 7 transactions at a time
+        .clock_speed_hz = 1000000,          
+        .mode = 0,                           
+        .spics_io_num = PIN_NUM_CS,          
+        .queue_size = 7,                     
     };
 
-    // Initialize the SPI bus
     esp_err_t ret = spi_bus_initialize(HSPI_HOST, &buscfg, 1);
     ESP_ERROR_CHECK(ret);
-
-    // Attach the MIC3 to the SPI bus
     spi_device_handle_t spi;
     ret = spi_bus_add_device(HSPI_HOST, &devcfg, &spi);
     ESP_ERROR_CHECK(ret);
@@ -221,50 +229,67 @@ void mic3_task(void *pvParameter) {
     while (1) {
         uint8_t data[2];
         spi_transaction_t t;
-        memset(&t, 0, sizeof(t));       // Zero out the transaction
-        t.length = 8 * 2;               // Transaction length is in bits
-        t.rx_buffer = data;             // Data to be received
-
-        // Transmit and receive data
+        memset(&t, 0, sizeof(t));
+        t.length = 8 * 2;                
+        t.rx_buffer = data;               
         ret = spi_device_transmit(spi, &t);
         ESP_ERROR_CHECK(ret);
 
-        // Print raw data received
-        ESP_LOGI(TAG, "Raw data received: 0x%02X 0x%02X", data[0], data[1]);
-
-        // Process received data
         int mic_value = (data[0] << 8) | data[1];
+        mic_value = mic_value & 0xFFF;
+        float decibels = (((float)mic_value / 4096) * MAX_DECIBELS) - 5;
 
-        // Check if the mic_value is within the expected range
-        if (mic_value < 0 || mic_value > ADC_MAX_VALUE) {
-            ESP_LOGE(TAG, "MIC3 value out of range: %d", mic_value);
+        if (decibels < 50) {
+            decibels = 75; 
+        } else if (decibels > MAX_DECIBELS) {
+            decibels = MAX_DECIBELS;
+        }
+
+        global_decibels = decibels;
+        
+        /*printf("Datos crudos: 0x%02X%02X | MIC3: %d | Decibeles: %.2f dB\n",
+               data[0], data[1], mic_value, decibels);*/ // Trazas de depuración
+
+
+        send_decibels_to_thingsboard(decibels);
+        vTaskDelay(pdMS_TO_TICKS(250));
+    }
+}
+
+void led_task(void *pvParameter) {
+    gpio_reset_pin(LED_RED_PIN);
+    gpio_reset_pin(LED_YELLOW_PIN);
+    gpio_reset_pin(LED_GREEN_PIN);
+    gpio_set_direction(LED_RED_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(LED_YELLOW_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(LED_GREEN_PIN, GPIO_MODE_OUTPUT);
+
+    while (1) {
+        if (global_voltage < 2 && global_decibels < 65) {
+            // Encender el LED verde
+            gpio_set_level(LED_GREEN_PIN, 1);
+            gpio_set_level(LED_YELLOW_PIN, 0);
+            gpio_set_level(LED_RED_PIN, 0);
+        } else if (global_voltage >= 2 && global_decibels >= 65) {
+            // Encender el LED rojo
+            gpio_set_level(LED_GREEN_PIN, 0);
+            gpio_set_level(LED_YELLOW_PIN, 0);
+            gpio_set_level(LED_RED_PIN, 1);
+        } else {
+            // Encender el LED amarillo de manera intermitente cada segundo
+            gpio_set_level(LED_GREEN_PIN, 0);
+            gpio_set_level(LED_RED_PIN, 0);
+            gpio_set_level(LED_YELLOW_PIN, 1);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            gpio_set_level(LED_YELLOW_PIN, 0);
+            vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
-
-        // Convert the digital value to voltage
-        float voltage = (mic_value * REF_VOLTAGE) / ADC_MAX_VALUE;
-
-        // Ensure voltage is positive and greater than zero
-        if (voltage <= 0) {
-            voltage = 0.0001; // Small positive value to avoid log(0)
-        }
-
-        // Convert the voltage to decibels (assuming a reference voltage of 0.775V for 0 dB)
-        float decibels = 20 * log10(mic_value / 0.775);
-
-        // Print the value in decibels
-        printf("MIC3 value: %d | Voltage: %.2f V | Decibels: %.2f dB\n", mic_value, voltage, decibels);
-
-        // Enviar el valor de decibeles a ThingsBoard
-        send_decibels_to_thingsboard(decibels);
-
-        // Esperar 3 ms
-        vTaskDelay(pdMS_TO_TICKS(300));
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
 void app_main(void) {
-    // Inicializar NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -272,21 +297,12 @@ void app_main(void) {
     }
     ESP_ERROR_CHECK(ret);
 
-    // Crear el semáforo binario
-    wifi_semaphore = xSemaphoreCreateBinary();
-
-    // Inicializar WiFi
-    wifi_init_sta();
-
-    // Esperar hasta que el WiFi esté conectado
+    wifi_semaphore = xSemaphoreCreateBinary();  //Semáforo para la conexión al WiFi
+    wifi_init_sta(); // Iniciar la conexión al WiFi
     xSemaphoreTake(wifi_semaphore, portMAX_DELAY);
-
-    // Enviar datos de ubicación
-    send_location_data();
-
-    // Crear la tarea para leer el sensor de luz
+    send_location_data(); // Enviar las coordenadas previamente definidas
+    // Iniciar las tareas
     xTaskCreate(&light_sensor_task, "light_sensor_task", 4096, NULL, 5, NULL);
-
-    // Crear la tarea para leer el micrófono
     xTaskCreate(&mic3_task, "mic3_task", 4096, NULL, 5, NULL);
+    xTaskCreate(&led_task, "led_task", 2048, NULL, 5, NULL);
 }
